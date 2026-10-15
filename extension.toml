@@ -13,7 +13,7 @@ languages = ["Lean 4"]
 
 [grammars.lean]
 repository = "https://github.com/Julian/tree-sitter-lean"
-rev = "efe6b87145608d12f5996bd7f0cf6095a0e82261"
+rev = "916c44f4d89c970f66dd34a49e7ce848f4d29e72"
 
 [[capabilities]]
 kind = "process:exec"
