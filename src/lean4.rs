@@ -1,13 +1,11 @@
 use std::{env, fs, path::PathBuf};
 use zed_extension_api::{self as zed, Result, serde_json::Value, settings::LspSettings};
 
-fn lake_server_args(lsp_settings: &LspSettings, worktree: &zed::Worktree) -> Vec<String> {
+fn lake_server_args(settings: Option<&Value>, worktree: &zed::Worktree) -> Vec<String> {
     let mut args = Vec::new();
 
-    if let Some(project_dir) = lsp_settings
-        .settings
-        .as_ref()
-        .and_then(|settings| settings.pointer("/lake_project_dir"))
+    if let Some(project_dir) = settings
+        .and_then(|settings| settings.get("lean_project_dir"))
         .and_then(Value::as_str)
     {
         let project_dir = PathBuf::from(project_dir);
@@ -36,11 +34,12 @@ impl zed::Extension for Lean4Extension {
         worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
         let shell_env = worktree.shell_env();
-        let lsp_settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)?;
-        let lake_args = lake_server_args(&lsp_settings, worktree);
+        let LspSettings {
+            binary, settings, ..
+        } = LspSettings::for_worktree(language_server_id.as_ref(), worktree)?;
 
         // Check lsp.lean4-lsp.binary
-        if let Some(binary) = lsp_settings.binary
+        if let Some(binary) = binary
             && let Some(path) = binary.path
         {
             return Ok(zed::Command {
@@ -50,11 +49,13 @@ impl zed::Extension for Lean4Extension {
             });
         }
 
+        let lake_args = lake_server_args(settings.as_ref(), worktree);
+
         // Check $PATH
         if let Some(path) = worktree.which("lake") {
             return Ok(zed::Command {
                 command: path,
-                args: lake_args.clone(),
+                args: lake_args,
                 env: vec![],
             });
         }
@@ -82,16 +83,15 @@ impl zed::Extension for Lean4Extension {
         if worktree.which(&lake_path_str).is_some() {
             return Ok(zed::Command {
                 command: lake_path_str,
-                args: lake_args.clone(),
+                args: lake_args,
                 env: vec![],
             });
         }
 
         // Check lsp.lean4-lsp.settings
-        let elan_auto_install = lsp_settings
-            .settings
+        let elan_auto_install = settings
             .as_ref()
-            .and_then(|s| s.pointer("/elan_auto_install"))
+            .and_then(|s| s.get("elan_auto_install"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
@@ -102,10 +102,9 @@ impl zed::Extension for Lean4Extension {
             );
         }
 
-        let elan_default_toolchain = lsp_settings
-            .settings
+        let elan_default_toolchain = settings
             .as_ref()
-            .and_then(|s| s.pointer("/elan_default_toolchain"))
+            .and_then(|s| s.get("elan_default_toolchain"))
             .and_then(Value::as_str)
             .unwrap_or("stable");
 

@@ -29,7 +29,7 @@ lean --version
 - Firstly, the extension will check `path` and `arguments` in `lsp.lean4-lsp.binary` settings. Then it will search `lake` in `$PATH`, try `$ELAN_HOME` and default directory.
 - If Lean 4 is not detected, this extension can automatically install elan with default toolchain. To enable this feature, you must set `"elan_auto_install"` to `true`. You can also specify the default toolchain by setting `"elan_default_toolchain"` to `"stable"`, `"nightly"` or `"v4.28.0"`.
 - During installation, the extension will automatically add `~/.elan` to your $PATH. The Lean toolchain can be completely removed by running `elan self uninstall`.
-- If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lake_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
+- If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lean_project_dir` to the project directory containing `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root; absolute paths are also supported. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
 
 ## settings.json Sample
 
@@ -51,16 +51,16 @@ lean --version
 }
 ```
 
-### Nested Lake project
+### Nested Lean project
 
-When the extension detects `lake` automatically, configure the nested project relative to the worktree root:
+When the extension detects `lake` automatically, configure the Lean project directory relative to the Zed worktree root:
 
 ```json
 {
   "lsp": {
     "lean4-lsp": {
       "settings": {
-        "lake_project_dir": "formalization"
+        "lean_project_dir": "formalization"
       }
     }
   }
