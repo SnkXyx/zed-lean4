@@ -1,8 +1,16 @@
-; Declarations may span signatures, values, tactic blocks, structure fields,
-; and inductive constructors. Nested ranges still increase indentation only
-; once per edited line in Zed.
+; Start at the declaration itself, after any attributes or modifiers on
+; preceding lines. Zed increases indentation at most once per edited line.
 [
-  (declaration)
+  (def)
+  (theorem)
+  (example)
+  (abbrev)
+  (opaque)
+  (constant)
+  (axiom)
+  (instance)
+  (structure)
+  (inductive)
   (initialize)
 ] @indent
 
@@ -41,19 +49,20 @@
 ] @indent
 
 [
-  (let [":=" "←" "<-"] @start)
-  (have ":=" @start)
+  (let [":=" "←" "<-"] @start ";"? @end)
+  (have ":=" @start ";"? @end)
   (suffices "from" @start)
   (show "from" @start)
 ] @indent
-
-(let
-  ";" @start) @indent
 
 (induction
   "with" @start) @indent
 
 ; Treat the two branches as separate ranges so `else` aligns with `if`.
+(if_then_else) @start.if
+; The complete node may disappear while its final branch is being entered.
+(ERROR "if" @start.if)
+
 (if_then_else
   "then" @start
   "else" @end) @indent
@@ -98,3 +107,7 @@
 (_
   "⟪"
   "⟫" @end) @indent
+
+(_
+  "⟦"
+  "⟧" @end) @indent

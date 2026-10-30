@@ -1,3 +1,7 @@
+; Annotation-only matches let Zed associate doc comments with the following
+; item. Attributes and modifiers remain part of the declaration's item range.
+(doc_comment) @annotation
+
 (namespace
   "namespace" @context
   name: (identifier) @name) @item
@@ -7,62 +11,64 @@
   name: (identifier) @name) @item
 
 (declaration
-  (attributes)? @annotation
   (def
     "def" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (theorem
     ["theorem" "lemma"] @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (abbrev
     "abbrev" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (opaque
     "opaque" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (constant
     "constant" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (axiom
     "axiom" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (instance
     "instance" @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
+  (instance
+    !name
+    "instance" @context
+    type: (_) @name)) @item
+
+(declaration
   (structure
     ["structure" "class"] @context
     name: (identifier) @name)) @item
 
 (declaration
-  (attributes)? @annotation
   (inductive
+    "class"? @context
     "inductive" @context
     name: (identifier) @name)) @item
 
 (initialize
   ["initialize" "builtin_initialize"] @context
   name: (identifier) @name) @item
+
+(alias_cmd
+  "alias" @context
+  name: [(identifier) (anon_ctor)] @name) @item
 
 (where_aux_def
   name: (identifier) @name) @item

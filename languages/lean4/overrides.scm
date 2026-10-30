@@ -5,6 +5,10 @@
   (char_lit)
 ] @string
 
+; Interpolation expressions are Lean code. Nested string literals still
+; select their smaller @string scope.
+(interpolation) @embedded
+
 [
   (line_comment)
   (block_comment)

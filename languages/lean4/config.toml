@@ -6,7 +6,7 @@ modeline_aliases = ["lean", "lean4"]
 line_comments = ["-- "]
 block_comment = ["/-", "-/"]
 documentation_comment = ["/--", "-/"]
-autoclose_before = ";:.,=}])>⟩⦄⟫"
+autoclose_before = ";:.,=}])>⟩⦄⟫⌉⌋⟧›"
 brackets = [
     { start = "{", end = "}", close = true, newline = true },
     { start = "[", end = "]", close = true, newline = true },
@@ -14,8 +14,20 @@ brackets = [
     { start = "⟨", end = "⟩", close = true, newline = true },
     { start = "⦃", end = "⦄", close = true, newline = true },
     { start = "⟪", end = "⟫", close = true, newline = true },
+    { start = "⌈", end = "⌉", close = true, newline = false },
+    { start = "⌊", end = "⌋", close = true, newline = false },
+    { start = "⟦", end = "⟧", close = true, newline = true },
+    { start = "‹", end = "›", close = true, newline = false },
     { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
     { start = "/-", end = "-/", close = true, newline = false, not_in = ["string", "comment"] },
 ]
-word_characters = ["'"]
+word_characters = ["'", "!", "?"]
 tab_size = 2
+
+# Incomplete terms may have no multiline syntax node yet. Keep this fallback
+# conservative: skip quoted lines and comment delimiters before the opener.
+increase_indent_pattern = '''^(?:[^"/\r\n-]|-[^"/\r\n-]|/[^"\r\n-])*(?:(?:^|[^\w'!?.])(?:by|do|where|then|else)|:=|=>|↦|←|<-)[ \t]*(?:--[^\r\n]*)?$'''
+
+decrease_indent_patterns = [
+    { pattern = '^\s*else(?:[ \t]|$)', valid_after = ["if"] },
+]

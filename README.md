@@ -20,6 +20,14 @@ lean --version
 
 - For optimal highlighting, set `"semantic_tokens"` to `"combined"`, which will enable LSP semantic tokens highlight in Zed.
 
+The extension provides automatic indentation, bracket matching and an outline for declarations, fields, constructors, aliases and anonymous instances. Bracket completion includes `⌈⌉`, `⌊⌋`, `⟦⟧` and `‹›`. Word selection includes Lean identifier suffixes such as the `!` in `get!` and the `?` in `find?`.
+
+In Vim mode, function and class text objects distinguish their bodies from the surrounding declarations. Each line comment is a separate comment object, so selections do not extend across blank lines. Namespace and section headers appear in the outline, but the grammar represents their contents as sibling commands and cannot provide enclosing namespace text objects.
+
+Documentation comments support Markdown highlighting. The current grammar exposes each comment as one token, so the injected Markdown includes the Lean comment delimiters and covers only the Markdown-compatible part of Verso syntax. Put Markdown block constructs such as headings on a new line after `/--` or `/-!`.
+
+Indentation uses syntax ranges and a conservative line-based fallback for unfinished terms. The fallback skips lines containing double quotes or comment delimiters before the final layout keyword; it cannot distinguish arbitrary text inside multiline strings or block comments from code. The static grammar also approximates custom notation and some tactic/do syntax; LSP semantic tokens complement its highlighting.
+
 ### Abbreviation
 
 - Abbreviation (unicode character) insertion is supported by [snippets](https://github.com/owlx56/zed-lean4/blob/main/snippets/lean%204.json).
