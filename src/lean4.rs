@@ -4,12 +4,10 @@ use zed_extension_api::{self as zed, Result, serde_json::Value, settings::LspSet
 fn lake_server_args(settings: Option<&Value>, worktree: &zed::Worktree) -> Vec<String> {
     let mut args = Vec::new();
 
-    if let Some(project_dir) = settings.and_then(|settings| {
-        settings
-            .get("lean_project_dir")
-            .and_then(Value::as_str)
-            .or_else(|| settings.get("lake_project_dir").and_then(Value::as_str))
-    }) {
+    if let Some(project_dir) = settings
+        .and_then(|settings| settings.get("lean_project_dir"))
+        .and_then(Value::as_str)
+    {
         let project_dir = PathBuf::from(project_dir);
         let project_dir = if project_dir.is_absolute() {
             project_dir

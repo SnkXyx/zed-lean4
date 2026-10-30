@@ -68,7 +68,7 @@ Project routing follows the VS Code Lean extension: `lean-toolchain` identifies 
 
 Opening files does not build dependencies by default. In automatic routing mode, use the `Lean: Restart File` code action (`Ctrl+.`) to rebuild saved dependencies and restart the current file while preserving unsaved edits.
 
-To override automatic detection, configure one project relative to the worktree root (the previous `lake_project_dir` setting remains supported; `lean_project_dir` takes precedence):
+To override automatic detection, configure one project relative to the worktree root:
 
 ```json
 {
