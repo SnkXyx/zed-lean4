@@ -1,42 +1,44 @@
 // A stdio LSP multiplexer. Runs on Zed's managed Node.js, outside the WASM sandbox.
+// Project isolation and dependency-build modes follow leanprover/vscode-lean4
+// (Apache-2.0), revision 939ccf20a33406c7c3b4518f152f11630fbd071f:
+// vscode-lean4/src/leanclient.ts, utils/clientProvider.ts, utils/converters.ts.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 
-const ignored = new Set(['.git', '.lake', 'node_modules', 'target', '.elan']);
+const { findLeanProjectRootInfo, fileExists, isCoreLean4Directory, willUseLakeServer } = require('./project-info.cjs');
+
+const ignored = new Set(['node_modules', 'target']);
 const restartCommand = 'zedLean.restartFile';
 const hasId = message => Object.hasOwn(message, 'id');
 const uriOf = params => params?.textDocument?.uri ?? params?.uri ?? params?.item?.uri;
 const asPath = uri => {
   try { return fileURLToPath(uri); } catch { return undefined; }
 };
-const isProject = dir => ['lakefile.lean', 'lakefile.toml'].some(name => {
-  try { return fs.statSync(path.join(dir, name)).isFile(); } catch { return false; }
-});
-
-// Walk upwards, including outside the worktree (e.g. a worktree opened at Project/Proofs).
-function projectRoot(filename, fallback) {
-  let dir = path.dirname(filename);
-  for (;;) {
-    if (isProject(dir)) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return fallback;
-    dir = parent;
+// Project discovery is ported from VS Code's Lean extension (see project-info.cjs).
+async function projectRoot(filename, fallback) {
+  const info = await findLeanProjectRootInfo(filename, fallback);
+  if (info.kind === 'LakefileWithoutToolchain') {
+    throw new Error(`Project at ${info.projectRootUri} has a Lakefile but no lean-toolchain file`);
   }
+  if (info.kind !== 'Success') throw new Error(`Cannot inspect Lean file: ${filename}`);
+  return info.projectRootUri;
 }
 
-// Initialization arrives before didOpen. Get real capabilities from one Lake server,
-// preferring the worktree's enclosing project, then the first nested project.
-function initialRoot(worktree) {
-  const enclosing = projectRoot(path.join(worktree, '_'), undefined);
-  if (enclosing) return enclosing;
+// Zed requires capabilities before didOpen. Select a bootstrap server using the
+// same discovery as documents; this scan does not decide document ownership.
+async function initialRoot(worktree) {
+  const enclosing = await projectRoot(worktree, worktree);
+  if (enclosing !== worktree || await fileExists(path.join(worktree, 'lean-toolchain')) || await isCoreLean4Directory(worktree)) return enclosing;
   const queue = [worktree];
   for (let i = 0; i < queue.length; i++) {
     const dir = queue[i];
-    if (isProject(dir)) return dir;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    if (entries.some(entry => entry.name === 'lean-toolchain' && entry.isFile())) {
+      return projectRoot(path.join(dir, '_'), worktree);
+    }
     for (const entry of entries) {
       if (entry.isDirectory() && !entry.name.startsWith('.') && !ignored.has(entry.name)) {
         queue.push(path.join(dir, entry.name));
@@ -102,6 +104,7 @@ class Router {
     this.worktree = path.resolve(worktree);
     this.output = output;
     this.servers = new Map();
+    this.serverQueues = new Map();
     this.clientRequests = new Map();
     this.cancelled = new Set();
     this.serverRequests = new Map();
@@ -134,7 +137,11 @@ class Router {
 
   async server(root) {
     if (this.servers.has(root)) return this.servers.get(root).ready;
-    const child = spawn(this.lake, ['--dir', root, 'serve', '--'], {
+    const useLake = await willUseLakeServer(root);
+    // Recheck after filesystem IO to avoid starting the same project twice.
+    if (this.servers.has(root)) return this.servers.get(root).ready;
+    const executable = useLake ? this.lake : path.join(path.dirname(this.lake), process.platform === 'win32' ? 'lean.exe' : 'lean');
+    const child = spawn(executable, useLake ? ['serve', '--'] : ['--server'], {
       cwd: root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
     const server = { root, child, pending: new Map(), prefix: `lake:${++this.nextId}:`, dead: false };
@@ -168,6 +175,18 @@ class Router {
       return server;
     })();
     return server.ready;
+  }
+
+  // Serialize document lifecycle and request dispatch within each project, while
+  // allowing another project's server to initialize independently. Wrapping the
+  // result prevents a long-running request from blocking subsequent notifications.
+  withServer(root, action) {
+    const queued = (this.serverQueues.get(root) ?? Promise.resolve()).then(async () => {
+      const server = await this.server(root);
+      return { value: action(server) };
+    });
+    this.serverQueues.set(root, queued.then(() => {}, () => {}));
+    return queued.then(result => result.value);
   }
 
   notify(server, method, params) {
@@ -243,7 +262,7 @@ class Router {
     this.send(message);
   }
 
-  rootFor(params) {
+  async rootFor(params) {
     if (params?.data?.__zedLakeRouter) return params.data.__zedLakeRouter.root;
     if (params?.item?.data?.__zedLakeRouter) return params.item.data.__zedLakeRouter.root;
     const commandRoot = params?.arguments?.at(-1)?.__zedLakeCommand;
@@ -300,7 +319,7 @@ class Router {
     const { method, params, id } = message;
     if (method === 'initialize') {
       this.initializeParams = params;
-      this.initial = initialRoot(this.worktree);
+      this.initial = await initialRoot(this.worktree);
       const server = await this.server(this.initial);
       const actions = server.capabilities.codeActionProvider;
       this.capabilities = {
@@ -323,6 +342,7 @@ class Router {
     if (method === 'exit') { this.dispose(this.stopping ? 0 : 1); return; }
     if (method === 'shutdown') {
       this.stopping = true;
+      await Promise.all([...this.serverQueues.values()]);
       await Promise.all([...this.servers.values()].filter(s => !s.dead).map(s => Promise.race([
         this.request(s, 'shutdown', null).catch(() => {}),
         new Promise(resolve => { const timer = setTimeout(resolve, 3000); timer.unref(); }),
@@ -352,10 +372,13 @@ class Router {
       const uri = params.textDocument.uri;
       const filename = asPath(uri);
       if (!filename) return;
-      const root = projectRoot(filename, this.worktree);
+      const root = await projectRoot(filename, this.worktree);
+      if (this.documents.has(uri)) return;
       this.documents.set(uri, root);
       this.documentContents.set(uri, { ...params.textDocument });
-      this.notify(await this.server(root), method, params);
+      this.withServer(root, server => this.notify(server, method, {
+        ...params, dependencyBuildMode: this.configuration?.settings?.automaticallyBuildDependencies ? 'always' : 'never',
+      })).catch(error => this.log(error.message));
       return;
     }
     if (method === 'textDocument/didChange') {
@@ -370,13 +393,17 @@ class Router {
       const uri = params.arguments?.[0];
       const document = this.documentContents.get(uri);
       if (!document) throw Object.assign(new Error('The Lean file is no longer open'), { code: -32602 });
-      const server = await this.server(this.documents.get(uri));
-      if (server.dead) throw new Error('Lake has stopped; restart the Lean language server');
-      this.notify(server, 'textDocument/didClose', { textDocument: { uri } });
-      this.notify(server, 'textDocument/didOpen', {
-        textDocument: { ...document }, dependencyBuildMode: 'once',
+      const snapshot = { ...document };
+      this.withServer(this.documents.get(uri), server => {
+        if (server.dead) throw new Error('Lake has stopped; restart the Lean language server');
+        this.notify(server, 'textDocument/didClose', { textDocument: { uri } });
+        this.notify(server, 'textDocument/didOpen', {
+          textDocument: snapshot,
+          dependencyBuildMode: this.configuration?.settings?.automaticallyBuildDependencies ? 'always' : 'once',
+        });
+      }).then(() => { if (hasId(message)) this.reply(id, null); }, error => {
+        if (hasId(message)) this.reply(id, undefined, error); else this.log(error.message);
       });
-      if (hasId(message)) this.reply(id, null);
       return;
     }
     if (method === 'codeAction/resolve' && params.command?.command === restartCommand) {
@@ -384,8 +411,11 @@ class Router {
       return;
     }
     if (!hasId(message)) {
-      const root = this.rootFor(params);
-      if (root) this.notify(await this.server(root), method, params);
+      // VS Code filters closes/edits for documents this client never opened.
+      if (['textDocument/didChange', 'textDocument/didClose', 'textDocument/didSave'].includes(method) &&
+          !this.documents.has(params.textDocument.uri)) return;
+      const root = await this.rootFor(params);
+      if (root) this.withServer(root, server => this.notify(server, method, params)).catch(error => this.log(error.message));
       else for (const server of this.servers.values()) this.notify(server, method, params);
       if (method === 'textDocument/didClose') {
         this.documents.delete(params.textDocument.uri);
@@ -395,13 +425,14 @@ class Router {
     }
     // Do not block the notification queue on requests (e.g. hover while a file
     // elaborates). didChange/didClose and cancellation must remain responsive.
-    this.routeRequest(message).catch(error => this.reply(id, undefined, error)).finally(() => {
+    const root = await this.rootFor(params) ?? this.initial;
+    this.routeRequest(message, root).catch(error => this.reply(id, undefined, error)).finally(() => {
       this.clientRequests.delete(id);
       this.cancelled.delete(id);
     });
   }
 
-  async routeRequest({ method, params, id }) {
+  async routeRequest({ method, params, id }, root) {
     if (method === 'workspace/symbol') {
       const results = await Promise.allSettled([...this.servers.values()].filter(server => !server.dead).map(async server => {
         await server.ready;
@@ -413,8 +444,10 @@ class Router {
       this.reply(id, successful.flatMap(result => result.value));
       return;
     }
-    const root = this.rootFor(params) ?? this.initial;
-    const server = await this.server(root);
+    return this.withServer(root, server => this.requestFromServer(server, method, params, id, root));
+  }
+
+  async requestFromServer(server, method, params, id, root) {
     let result;
     if (method === 'textDocument/codeAction') {
       result = [];
@@ -467,6 +500,6 @@ class Router {
 module.exports = { Router, projectRoot, initialRoot, applyChanges, read, write };
 if (require.main === module) {
   const [, , lake, worktree] = process.argv;
-  if (!lake || !worktree) throw new Error('Usage: lake-router.cjs LAKE WORKTREE');
+  if (!lake || !worktree) throw new Error('Usage: router.cjs LAKE WORKTREE');
   new Router(lake, worktree);
 }

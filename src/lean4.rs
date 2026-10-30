@@ -23,6 +23,25 @@ fn lake_server_args(lsp_settings: &LspSettings, worktree: &zed::Worktree) -> Vec
     args
 }
 
+// Embed the runtime scripts needed to start the server.
+const SERVER_RESOURCES: &[(&str, &str)] = &[
+    ("router.cjs", include_str!("../server/router.cjs")),
+    (
+        "project-info.cjs",
+        include_str!("../server/project-info.cjs"),
+    ),
+];
+
+fn write_server_resources() -> Result<PathBuf> {
+    let directory =
+        env::current_dir().map_err(|e| format!("Failed to get extension directory: {e}"))?;
+    for (name, contents) in SERVER_RESOURCES {
+        fs::write(directory.join(name), contents)
+            .map_err(|e| format!("Failed to write server resource {name}: {e}"))?;
+    }
+    Ok(directory.join("router.cjs"))
+}
+
 struct Lean4Extension;
 
 impl Lean4Extension {
@@ -42,11 +61,7 @@ impl Lean4Extension {
 
         // WASM cannot inspect arbitrary project files or spawn long-lived child
         // processes. Run the stdio router using Zed's managed Node installation.
-        let router_path = env::current_dir()
-            .map_err(|e| format!("Failed to get extension directory: {e}"))?
-            .join("lake-router.cjs");
-        fs::write(&router_path, include_str!("lake-router.cjs"))
-            .map_err(|e| format!("Failed to write Lake router: {e}"))?;
+        let router_path = write_server_resources()?;
         Ok(zed::Command {
             command: zed::node_binary_path()?,
             args: vec![
