@@ -41,6 +41,8 @@ Indentation uses syntax ranges and a conservative line-based fallback for unfini
 
 ## settings.json Sample
 
+This sample uses a Lean project in the `formalization` subdirectory of the Zed worktree. Omit `binary` to detect Lake automatically and use `lean_project_dir`; with an explicit binary, set `--dir` to the same project directory. For a project at the worktree root, omit `lean_project_dir` and the `--dir` argument and its value.
+
 ```json
 {
   "semantic_tokens": "combined",
@@ -48,26 +50,11 @@ Indentation uses syntax ranges and a conservative line-based fallback for unfini
     "lean4-lsp": {
       "binary": {
         "path": "/path/to/your/.elan/bin/lake",
-        "arguments": ["serve", "--"]
+        "arguments": ["--dir", "/path/to/your/worktree/formalization", "serve", "--"]
       },
       "settings": {
         "elan_auto_install": true,
-        "elan_default_toolchain": "stable"
-      }
-    }
-  }
-}
-```
-
-### Nested Lean project
-
-When the extension detects `lake` automatically, configure the Lean project directory relative to the Zed worktree root:
-
-```json
-{
-  "lsp": {
-    "lean4-lsp": {
-      "settings": {
+        "elan_default_toolchain": "stable",
         "lean_project_dir": "formalization"
       }
     }
