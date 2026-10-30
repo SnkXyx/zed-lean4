@@ -25,6 +25,40 @@ fn lake_server_args(lsp_settings: &LspSettings, worktree: &zed::Worktree) -> Vec
 
 struct Lean4Extension;
 
+impl Lean4Extension {
+    fn lake_command(
+        lake: String,
+        args: Vec<String>,
+        worktree: &zed::Worktree,
+    ) -> Result<zed::Command> {
+        // An explicit project directory retains the original single-server mode.
+        if args.first().is_some_and(|arg| arg == "--dir") {
+            return Ok(zed::Command {
+                command: lake,
+                args,
+                env: vec![],
+            });
+        }
+
+        // WASM cannot inspect arbitrary project files or spawn long-lived child
+        // processes. Run the stdio router using Zed's managed Node installation.
+        let router_path = env::current_dir()
+            .map_err(|e| format!("Failed to get extension directory: {e}"))?
+            .join("lake-router.cjs");
+        fs::write(&router_path, include_str!("lake-router.cjs"))
+            .map_err(|e| format!("Failed to write Lake router: {e}"))?;
+        Ok(zed::Command {
+            command: zed::node_binary_path()?,
+            args: vec![
+                router_path.to_string_lossy().into_owned(),
+                lake,
+                worktree.root_path(),
+            ],
+            env: vec![],
+        })
+    }
+}
+
 impl zed::Extension for Lean4Extension {
     fn new() -> Self {
         Self
@@ -52,11 +86,7 @@ impl zed::Extension for Lean4Extension {
 
         // Check $PATH
         if let Some(path) = worktree.which("lake") {
-            return Ok(zed::Command {
-                command: path,
-                args: lake_args.clone(),
-                env: vec![],
-            });
+            return Self::lake_command(path, lake_args, worktree);
         }
 
         // Check $ELAN_HOME or default directory
@@ -80,11 +110,7 @@ impl zed::Extension for Lean4Extension {
         let lake_path_str = lake_path.to_string_lossy().to_string();
 
         if worktree.which(&lake_path_str).is_some() {
-            return Ok(zed::Command {
-                command: lake_path_str,
-                args: lake_args.clone(),
-                env: vec![],
-            });
+            return Self::lake_command(lake_path_str, lake_args, worktree);
         }
 
         // Check lsp.lean4-lsp.settings
@@ -179,11 +205,7 @@ impl zed::Extension for Lean4Extension {
 
         fs::remove_dir_all(&version_dir).ok();
 
-        Ok(zed::Command {
-            command: lake_path_str,
-            args: lake_args,
-            env: vec![],
-        })
+        Self::lake_command(lake_path_str, lake_args, worktree)
     }
 
     fn language_server_initialization_options(

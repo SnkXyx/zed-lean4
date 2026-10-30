@@ -29,7 +29,7 @@ lean --version
 - Firstly, the extension will check `path` and `arguments` in `lsp.lean4-lsp.binary` settings. Then it will search `lake` in `$PATH`, try `$ELAN_HOME` and default directory.
 - If Lean 4 is not detected, this extension can automatically install elan with default toolchain. To enable this feature, you must set `"elan_auto_install"` to `true`. You can also specify the default toolchain by setting `"elan_default_toolchain"` to `"stable"`, `"nightly"` or `"v4.28.0"`.
 - During installation, the extension will automatically add `~/.elan` to your $PATH. The Lean toolchain can be completely removed by running `elan self uninstall`.
-- If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lake_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
+- Nested Lake projects are detected per file automatically using Zed’s managed Node.js, with a separate server for each project. To pin the worktree to one project instead, set `lsp.lean4-lsp.settings.lake_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
 
 ## settings.json Sample
 
@@ -53,7 +53,9 @@ lean --version
 
 ### Nested Lake project
 
-When the extension detects `lake` automatically, configure the nested project relative to the worktree root:
+Files automatically use the nearest enclosing `lakefile.toml` or `lakefile.lean`, including sibling and nested projects. Restart the Lean language server after changing project boundaries or toolchains. Custom `binary` settings bypass automatic routing.
+
+To override automatic detection, configure one project relative to the worktree root:
 
 ```json
 {
