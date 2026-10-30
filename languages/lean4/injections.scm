@@ -1,2 +1,7 @@
-((doc_comment) @markdown
-  (#offset! @markdown 0 3 0 -2))
+; Doc comments are single external tokens in the pinned grammar. Zed injects
+; their full range, including the comment delimiters; #offset! is unsupported.
+((doc_comment) @injection.content
+  (#set! injection.language "markdown"))
+
+((module_doc_comment) @injection.content
+  (#set! injection.language "markdown"))
