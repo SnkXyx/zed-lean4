@@ -37,11 +37,16 @@ Indentation uses syntax ranges and a conservative line-based fallback for unfini
 - Firstly, the extension will check `path` and `arguments` in `lsp.lean4-lsp.binary` settings. Then it will search `lake` in `$PATH`, try `$ELAN_HOME` and default directory.
 - If Lean 4 is not detected, this extension can automatically install elan with default toolchain. To enable this feature, you must set `"elan_auto_install"` to `true`. You can also specify the default toolchain by setting `"elan_default_toolchain"` to `"stable"`, `"nightly"` or `"v4.28.0"`.
 - During installation, the extension will automatically add `~/.elan` to your $PATH. The Lean toolchain can be completely removed by running `elan self uninstall`.
-- If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lean_project_dir` to the project directory containing `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root; absolute paths are also supported. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
+
+### Nested Lean project
+
+If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lean_project_dir` to the project directory containing `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root; absolute paths are also supported. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available.
+
+A configured `lsp.lean4-lsp.binary` takes precedence over `lean_project_dir`. Omit `binary` to detect Lake automatically; with an explicit binary, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
+
+The sample below uses a Lean project in the `formalization` subdirectory of the Zed worktree. For a project at the worktree root, omit `lean_project_dir` and the `--dir` argument and its value.
 
 ## settings.json Sample
-
-This sample uses a Lean project in the `formalization` subdirectory of the Zed worktree. Omit `binary` to detect Lake automatically and use `lean_project_dir`; with an explicit binary, set `--dir` to the same project directory. For a project at the worktree root, omit `lean_project_dir` and the `--dir` argument and its value.
 
 ```json
 {
