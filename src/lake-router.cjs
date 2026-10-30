@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 
 const ignored = new Set(['.git', '.lake', 'node_modules', 'target', '.elan']);
+const restartCommand = 'zedLean.restartFile';
 const hasId = message => Object.hasOwn(message, 'id');
 const uriOf = params => params?.textDocument?.uri ?? params?.uri ?? params?.item?.uri;
 const asPath = uri => {
@@ -45,6 +46,29 @@ function initialRoot(worktree) {
   return worktree;
 }
 
+// LSP positions use UTF-16 code units by default, as do JavaScript strings.
+function applyChanges(text, changes) {
+  for (const change of changes) {
+    if (!change.range) { text = change.text; continue; }
+    const offset = position => {
+      let start = 0;
+      for (let line = 0; line < position.line; line++) {
+        const end = /\r\n|\r|\n/g;
+        end.lastIndex = start;
+        const match = end.exec(text);
+        if (!match) return text.length;
+        start = end.lastIndex;
+      }
+      const end = text.slice(start).search(/[\r\n]/);
+      return Math.min(start + position.character, end < 0 ? text.length : start + end);
+    };
+    const start = offset(change.range.start);
+    const end = offset(change.range.end);
+    text = text.slice(0, start) + change.text + text.slice(end);
+  }
+  return text;
+}
+
 function write(stream, message) {
   const body = Buffer.from(JSON.stringify(message));
   stream.write(`Content-Length: ${body.length}\r\n\r\n`);
@@ -82,6 +106,7 @@ class Router {
     this.cancelled = new Set();
     this.serverRequests = new Map();
     this.documents = new Map();
+    this.documentContents = new Map();
     this.nextId = 0;
     this.configuration = undefined;
     this.stopping = false;
@@ -277,7 +302,20 @@ class Router {
       this.initializeParams = params;
       this.initial = initialRoot(this.worktree);
       const server = await this.server(this.initial);
-      this.capabilities = server.capabilities;
+      const actions = server.capabilities.codeActionProvider;
+      this.capabilities = {
+        ...server.capabilities,
+        codeActionProvider: {
+          ...(typeof actions === 'object' ? actions : {}),
+          ...(!actions || actions.codeActionKinds ? {
+            codeActionKinds: [...new Set([...(actions?.codeActionKinds ?? []), 'quickfix'])],
+          } : {}),
+        },
+        executeCommandProvider: {
+          ...server.capabilities.executeCommandProvider,
+          commands: [...new Set([...(server.capabilities.executeCommandProvider?.commands ?? []), restartCommand])],
+        },
+      };
       this.reply(id, { capabilities: this.capabilities, serverInfo: { name: 'Lean Lake router' } });
       return;
     }
@@ -316,14 +354,43 @@ class Router {
       if (!filename) return;
       const root = projectRoot(filename, this.worktree);
       this.documents.set(uri, root);
+      this.documentContents.set(uri, { ...params.textDocument });
       this.notify(await this.server(root), method, params);
+      return;
+    }
+    if (method === 'textDocument/didChange') {
+      const document = this.documentContents.get(params.textDocument.uri);
+      if (document) {
+        document.text = applyChanges(document.text, params.contentChanges);
+        document.version = params.textDocument.version;
+      }
+    }
+    if (method === 'workspace/executeCommand' && params.command === restartCommand) {
+      // Keep close/open together in the notification queue, ahead of later edits.
+      const uri = params.arguments?.[0];
+      const document = this.documentContents.get(uri);
+      if (!document) throw Object.assign(new Error('The Lean file is no longer open'), { code: -32602 });
+      const server = await this.server(this.documents.get(uri));
+      if (server.dead) throw new Error('Lake has stopped; restart the Lean language server');
+      this.notify(server, 'textDocument/didClose', { textDocument: { uri } });
+      this.notify(server, 'textDocument/didOpen', {
+        textDocument: { ...document }, dependencyBuildMode: 'once',
+      });
+      if (hasId(message)) this.reply(id, null);
+      return;
+    }
+    if (method === 'codeAction/resolve' && params.command?.command === restartCommand) {
+      this.reply(id, params);
       return;
     }
     if (!hasId(message)) {
       const root = this.rootFor(params);
       if (root) this.notify(await this.server(root), method, params);
       else for (const server of this.servers.values()) this.notify(server, method, params);
-      if (method === 'textDocument/didClose') this.documents.delete(params.textDocument.uri);
+      if (method === 'textDocument/didClose') {
+        this.documents.delete(params.textDocument.uri);
+        this.documentContents.delete(params.textDocument.uri);
+      }
       return;
     }
     // Do not block the notification queue on requests (e.g. hover while a file
@@ -348,7 +415,23 @@ class Router {
     }
     const root = this.rootFor(params) ?? this.initial;
     const server = await this.server(root);
-    let result = await this.request(server, method, this.untag(params), id);
+    let result;
+    if (method === 'textDocument/codeAction') {
+      result = [];
+      if (server.capabilities.codeActionProvider) {
+        try { result = await this.request(server, method, this.untag(params), id) ?? []; }
+        catch (error) { if (error.code !== -32601) throw error; }
+      }
+      const only = params.context?.only;
+      // Source actions may run automatically on save; a restart is always explicit.
+      if (this.documentContents.has(params.textDocument.uri) &&
+          (!only || only.some(kind => kind === '' || kind === 'quickfix'))) {
+        result.push({
+          title: 'Lean: Restart File', kind: 'quickfix',
+          command: { title: 'Lean: Restart File', command: restartCommand, arguments: [params.textDocument.uri] },
+        });
+      }
+    } else result = await this.request(server, method, this.untag(params), id);
     // Token legends can vary across Lean toolchains; translate into the legend
     // advertised to Zed rather than interpreting token indices from another version.
     if (method.startsWith('textDocument/semanticTokens/') && result?.data) {
@@ -381,7 +464,7 @@ class Router {
   }
 }
 
-module.exports = { Router, projectRoot, initialRoot, read, write };
+module.exports = { Router, projectRoot, initialRoot, applyChanges, read, write };
 if (require.main === module) {
   const [, , lake, worktree] = process.argv;
   if (!lake || !worktree) throw new Error('Usage: lake-router.cjs LAKE WORKTREE');

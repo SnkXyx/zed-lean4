@@ -55,6 +55,8 @@ lean --version
 
 Files automatically use the nearest enclosing `lakefile.toml` or `lakefile.lean`, including sibling and nested projects. Restart the Lean language server after changing project boundaries or toolchains. Custom `binary` settings bypass automatic routing.
 
+In automatic routing mode, use the `Lean: Restart File` code action (`Ctrl+.`) to rebuild saved dependencies and restart the current file while preserving unsaved edits.
+
 To override automatic detection, configure one project relative to the worktree root:
 
 ```json
