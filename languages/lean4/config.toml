@@ -1,8 +1,21 @@
 name = "Lean 4"
 grammar = "lean"
 path_suffixes = ["lean"]
+code_fence_block_name = "lean"
+modeline_aliases = ["lean", "lean4"]
 line_comments = ["-- "]
-"blockComment" = ["/-", "-/"]
-autoclose_before = ""
-# brackets = []
+block_comment = ["/-", "-/"]
+documentation_comment = ["/--", "-/"]
+autoclose_before = ";:.,=}])>⟩⦄⟫"
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = true },
+    { start = "⟨", end = "⟩", close = true, newline = true },
+    { start = "⦃", end = "⦄", close = true, newline = true },
+    { start = "⟪", end = "⟫", close = true, newline = true },
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+    { start = "/-", end = "-/", close = true, newline = false, not_in = ["string", "comment"] },
+]
+word_characters = ["'"]
 tab_size = 2
