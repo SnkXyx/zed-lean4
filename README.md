@@ -37,7 +37,7 @@ Indentation uses syntax ranges and a conservative line-based fallback for unfini
 - Firstly, the extension will check `path` and `arguments` in `lsp.lean4-lsp.binary` settings. Then it will search `lake` in `$PATH`, try `$ELAN_HOME` and default directory.
 - If Lean 4 is not detected, this extension can automatically install elan with default toolchain. To enable this feature, you must set `"elan_auto_install"` to `true`. You can also specify the default toolchain by setting `"elan_default_toolchain"` to `"stable"`, `"nightly"` or `"v4.28.0"`.
 - During installation, the extension will automatically add `~/.elan` to your $PATH. The Lean toolchain can be completely removed by running `elan self uninstall`.
-- Nested Lake projects are detected per file automatically using Zed’s managed Node.js, with a separate server for each project. To pin the worktree to one project instead, set `lsp.lean4-lsp.settings.lean_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
+- One Lean server handles the worktree, including dependency source files, using Zed’s managed Node.js. To select a project directory, set `lsp.lean4-lsp.settings.lean_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. The server starts in that directory (the worktree root by default), using its toolchain and dependencies. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
 
 ## settings.json Sample
 
@@ -62,13 +62,13 @@ This sample uses a Lean project in the `formalization` subdirectory of the Zed w
 }
 ```
 
-### Nested Lake project
+### Project directory and Restart File
 
-Project routing follows the VS Code Lean extension: `lean-toolchain` identifies project boundaries, and sources under `.lake/packages` use the owning project’s server and toolchain. Restart the Lean language server after changing project boundaries or toolchains. Custom `binary` settings bypass automatic routing.
+All files use the selected project's server, including dependency sources. Nested projects are not detected automatically. Restart the Lean language server after changing the project directory or toolchain. Custom `binary` settings bypass the bridge and its Restart File action.
 
-Opening files does not build dependencies by default. In automatic routing mode, use the `Lean: Restart File` code action (`Ctrl+.`) to rebuild saved dependencies and restart the current file while preserving unsaved edits.
+Opening files does not build dependencies by default. Use the `Lean: Restart File` code action (`Ctrl+.`) to rebuild saved dependencies and restart the current file while preserving unsaved edits.
 
-To override automatic detection, configure one project relative to the worktree root:
+To select a project relative to the worktree root (omit `binary`):
 
 ```json
 {

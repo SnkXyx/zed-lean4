@@ -1,34 +1,23 @@
 use std::{env, fs, path::PathBuf};
 use zed_extension_api::{self as zed, Result, serde_json::Value, settings::LspSettings};
 
-fn lake_server_args(settings: Option<&Value>, worktree: &zed::Worktree) -> Vec<String> {
-    let mut args = Vec::new();
-
-    if let Some(project_dir) = settings
+fn project_directory(settings: Option<&Value>, worktree: &zed::Worktree) -> Option<String> {
+    settings
         .and_then(|settings| settings.get("lean_project_dir"))
         .and_then(Value::as_str)
-    {
-        let project_dir = PathBuf::from(project_dir);
-        let project_dir = if project_dir.is_absolute() {
-            project_dir
-        } else {
-            PathBuf::from(worktree.root_path()).join(project_dir)
-        };
-        args.extend(["--dir".into(), project_dir.to_string_lossy().into_owned()]);
-    }
-
-    args.extend(["serve".into(), "--".into()]);
-    args
+        .map(|project_dir| {
+            let project_dir = PathBuf::from(project_dir);
+            let project_dir = if project_dir.is_absolute() {
+                project_dir
+            } else {
+                PathBuf::from(worktree.root_path()).join(project_dir)
+            };
+            project_dir.to_string_lossy().into_owned()
+        })
 }
 
 // Embed the runtime scripts needed to start the server.
-const SERVER_RESOURCES: &[(&str, &str)] = &[
-    ("router.cjs", include_str!("../server/router.cjs")),
-    (
-        "project-info.cjs",
-        include_str!("../server/project-info.cjs"),
-    ),
-];
+const SERVER_RESOURCES: &[(&str, &str)] = &[("bridge.cjs", include_str!("../server/bridge.cjs"))];
 
 fn write_server_resources() -> Result<PathBuf> {
     let directory =
@@ -37,7 +26,7 @@ fn write_server_resources() -> Result<PathBuf> {
         fs::write(directory.join(name), contents)
             .map_err(|e| format!("Failed to write server resource {name}: {e}"))?;
     }
-    Ok(directory.join("router.cjs"))
+    Ok(directory.join("bridge.cjs"))
 }
 
 struct Lean4Extension;
@@ -45,28 +34,20 @@ struct Lean4Extension;
 impl Lean4Extension {
     fn lake_command(
         lake: String,
-        args: Vec<String>,
+        project_dir: Option<String>,
         worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
-        // An explicit project directory retains the original single-server mode.
-        if args.first().is_some_and(|arg| arg == "--dir") {
-            return Ok(zed::Command {
-                command: lake,
-                args,
-                env: vec![],
-            });
-        }
-
         // WASM cannot inspect arbitrary project files or spawn long-lived child
-        // processes. Run the stdio router using Zed's managed Node installation.
-        let router_path = write_server_resources()?;
+        // processes. Run the stdio bridge using Zed's managed Node installation.
+        let bridge_path = write_server_resources()?;
+        let args = vec![
+            bridge_path.to_string_lossy().into_owned(),
+            lake,
+            project_dir.unwrap_or_else(|| worktree.root_path()),
+        ];
         Ok(zed::Command {
             command: zed::node_binary_path()?,
-            args: vec![
-                router_path.to_string_lossy().into_owned(),
-                lake,
-                worktree.root_path(),
-            ],
+            args,
             env: vec![],
         })
     }
@@ -98,11 +79,11 @@ impl zed::Extension for Lean4Extension {
             });
         }
 
-        let lake_args = lake_server_args(settings.as_ref(), worktree);
+        let project_dir = project_directory(settings.as_ref(), worktree);
 
         // Check $PATH
         if let Some(path) = worktree.which("lake") {
-            return Self::lake_command(path, lake_args, worktree);
+            return Self::lake_command(path, project_dir, worktree);
         }
 
         // Check $ELAN_HOME or default directory
@@ -126,7 +107,7 @@ impl zed::Extension for Lean4Extension {
         let lake_path_str = lake_path.to_string_lossy().to_string();
 
         if worktree.which(&lake_path_str).is_some() {
-            return Self::lake_command(lake_path_str, lake_args, worktree);
+            return Self::lake_command(lake_path_str, project_dir, worktree);
         }
 
         // Check lsp.lean4-lsp.settings
@@ -219,7 +200,7 @@ impl zed::Extension for Lean4Extension {
 
         fs::remove_dir_all(&version_dir).ok();
 
-        Self::lake_command(lake_path_str, lake_args, worktree)
+        Self::lake_command(lake_path_str, project_dir, worktree)
     }
 
     fn language_server_initialization_options(
