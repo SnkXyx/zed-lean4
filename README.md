@@ -20,28 +20,22 @@ lean --version
 
 - For optimal highlighting, set `"semantic_tokens"` to `"combined"`, which will enable LSP semantic tokens highlight in Zed.
 
-The extension provides automatic indentation, bracket matching and an outline for declarations, fields, constructors, aliases and anonymous instances. Bracket completion includes `⌈⌉`, `⌊⌋`, `⟦⟧` and `‹›`. Word selection includes Lean identifier suffixes such as the `!` in `get!` and the `?` in `find?`.
-
-In Vim mode, function and class text objects distinguish their bodies from the surrounding declarations. Each line comment is a separate comment object, so selections do not extend across blank lines. Namespace and section headers appear in the outline, but the grammar represents their contents as sibling commands and cannot provide enclosing namespace text objects.
-
-Documentation comments support Markdown highlighting. The current grammar exposes each comment as one token, so the injected Markdown includes the Lean comment delimiters and covers only the Markdown-compatible part of Verso syntax. Put Markdown block constructs such as headings on a new line after `/--` or `/-!`.
-
-Indentation uses syntax ranges and a conservative line-based fallback for unfinished terms. The fallback skips lines containing double quotes or comment delimiters before the final layout keyword; it cannot distinguish arbitrary text inside multiline strings or block comments from code. The static grammar also approximates custom notation and some tactic/do syntax; LSP semantic tokens complement its highlighting.
-
 ### Abbreviation
 
 - Abbreviation (unicode character) insertion is supported by [snippets](https://github.com/owlx56/zed-lean4/blob/main/snippets/lean%204.json).
+
+### Nested Lean project
+
+- If the Zed worktree is a parent directory of a Lean project, set `lsp.lean4-lsp.settings.lean_project_dir` to the project directory containing `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root; absolute paths are also supported. This starts an automatically detected Lake with `--dir` so project dependencies such as Mathlib are available.
+- A configured `lsp.lean4-lsp.binary` takes precedence over `lean_project_dir`. Omit `binary` to detect Lake automatically; with an explicit binary, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
 
 ### Installation
 
 - Firstly, the extension will check `path` and `arguments` in `lsp.lean4-lsp.binary` settings. Then it will search `lake` in `$PATH`, try `$ELAN_HOME` and default directory.
 - If Lean 4 is not detected, this extension can automatically install elan with default toolchain. To enable this feature, you must set `"elan_auto_install"` to `true`. You can also specify the default toolchain by setting `"elan_default_toolchain"` to `"stable"`, `"nightly"` or `"v4.28.0"`.
 - During installation, the extension will automatically add `~/.elan` to your $PATH. The Lean toolchain can be completely removed by running `elan self uninstall`.
-- One Lean server handles the worktree, including dependency source files, using Zed’s managed Node.js. To select a project directory, set `lsp.lean4-lsp.settings.lean_project_dir` to the directory containing that project's `lakefile.toml` (or `lakefile.lean`). Relative paths are resolved from the worktree root. The server starts in that directory (the worktree root by default), using its toolchain and dependencies. A configured `lsp.lean4-lsp.binary` takes precedence; for that case, include `"--dir", "/path/to/project"` before `"serve"` in `binary.arguments`.
 
 ## settings.json Sample
-
-This sample uses a Lean project in the `formalization` subdirectory of the Zed worktree. Omit `binary` to detect Lake automatically and use `lean_project_dir`; with an explicit binary, set `--dir` to the same project directory. For a project at the worktree root, omit `lean_project_dir` and the `--dir` argument and its value.
 
 ```json
 {
@@ -55,26 +49,6 @@ This sample uses a Lean project in the `formalization` subdirectory of the Zed w
       "settings": {
         "elan_auto_install": true,
         "elan_default_toolchain": "stable",
-        "lean_project_dir": "formalization"
-      }
-    }
-  }
-}
-```
-
-### Project directory and Restart File
-
-All files use the selected project's server, including dependency sources. Nested projects are not detected automatically. Restart the Lean language server after changing the project directory or toolchain. Custom `binary` settings bypass the bridge and its Restart File action.
-
-Opening files does not build dependencies by default. Use the `Lean: Restart File` code action (`Ctrl+.`) to rebuild saved dependencies and restart the current file while preserving unsaved edits.
-
-To select a project relative to the worktree root (omit `binary`):
-
-```json
-{
-  "lsp": {
-    "lean4-lsp": {
-      "settings": {
         "lean_project_dir": "formalization"
       }
     }
